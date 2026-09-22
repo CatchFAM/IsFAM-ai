@@ -1,0 +1,20 @@
+{
+  "model_name": "isfam/spectral-mlp-dfadd-v1",
+  "training_dataset": "DFADD deterministic calibration subset",
+  "dataset_sha256": "61ae17345a9586b6a754c3d51ce4dbd0e2159525efd63715e5c193b3f2323c0d",
+  "seed": 5,
+  "epochs": 500,
+  "max_real_fpr": 0.05,
+  "threshold": 0.5107068233191967,
+  "feature_count": 196,
+  "calibration_metrics": {
+    "samples": 400,
+    "tp": 200,
+    "tn": 200,
+    "fp": 0,
+    "fn": 0,
+    "accuracy": 1.0,
+    "fake_recall": 1.0,
+    "false_positive_rate": 0.0
+  }
+}

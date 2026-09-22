@@ -40,7 +40,7 @@ IsFAM에서 실제로 개발한 핵심 기능은 다음과 같습니다.
    통화 구간별 family confidence와 mismatch confidence를 품질/최근성 가중치로 누적해 실시간 판단을 안정화합니다.
 
 11. 객관 평가 리포트
-   현재 등록 가족 음성으로 같은 화자/다른 화자 pair를 만들고 threshold별 정확도, FAR, FRR을 산출합니다.
+   가족 음성과 공개 real/fake 고정 평가셋으로 정확도, FAR/FRR, fake recall, 지연 시간을 산출합니다.
 ```
 
 현재 구현된 판단 흐름은 다음과 같습니다.
@@ -98,13 +98,15 @@ speechbrain/spkrec-ecapa-voxceleb
 
 ### 2. 딥보이스 탐지
 
-전화 음성을 일정 길이의 구간으로 나누고, 각 구간에 대해 real/spoof 분류 모델을 실행합니다.
+3~5초 전화 음성에서 log-spectrum 통계 특징 196개를 추출하고, 작은 MLP로 real/spoof 점수를 계산합니다. 공개 DFADD calibration 세트로 학습·보정했으며 기존 Transformers 모델은 선택 가능한 fallback으로 남겨 두었습니다.
 
-사용 모델:
+기본 모델:
 
 ```text
-Vansh180/deepfake-audio-wav2vec2
+isfam/spectral-mlp-dfadd-v1
 ```
+
+고정 DFADD 테스트 800개에서 기존 기본 모델 대비 정확도는 `50.88% → 98.88%`, fake recall은 `1.75% → 99.50%`, 평균 순수 추론은 `117.18 ms → 2.08 ms`로 개선됐습니다. 모델 구성, 개선 이유, 전화환경 제한과 상세 수치는 [AI 최종 정리](reports/ai_upgrade_results.md)를 참고합니다.
 
 ### 3. IsFAM Risk Scoring
 
@@ -499,8 +501,9 @@ http://127.0.0.1:5173
 docker compose up --build ai postgres
 ```
 
-첫 실행에서는 딥보이스 모델을 내려받아 named volume에 보관하므로 시작 시간이 더
-길 수 있습니다. 기본 설정은 CPU 단일 worker와 프로세스 내부 최대 동시 추론 2개입니다.
+기본 spectral 모델은 저장소에 포함되어 별도 모델 다운로드가 없습니다. Transformers
+fallback을 선택한 첫 실행에서만 Hugging Face 모델을 내려받습니다. 기본 설정은 CPU
+단일 worker와 프로세스 내부 최대 동시 추론 2개입니다.
 실제 배포 인스턴스에서는 아래 부하 테스트를 다시 실행한 뒤 replica 수를 정합니다.
 
 ```bash
@@ -509,11 +512,12 @@ docker compose up --build ai postgres
 
 ```bash
 ISFAM_SPEAKER_THRESHOLD=0.65 uvicorn app.main:app --reload
-ISFAM_ANTI_SPOOFING_THRESHOLD=0.50 uvicorn app.main:app --reload
+ISFAM_ANTI_SPOOFING_BACKEND=spectral uvicorn app.main:app --reload
+ISFAM_ANTI_SPOOFING_THRESHOLD=0.5107068233191967 uvicorn app.main:app --reload
 ISFAM_VOICE_SESSION_STRONG_SPOOF_SCORE=0.80 uvicorn app.main:app --reload
 ISFAM_ANTI_SPOOFING_BATCH_SIZE=4 uvicorn app.main:app --reload
 ISFAM_ANTI_SPOOFING_MAX_CONCURRENCY=2 uvicorn app.main:app --reload
-ISFAM_ANTI_SPOOFING_MODEL_VERSION=2026-08-v1 uvicorn app.main:app --reload
+ISFAM_ANTI_SPOOFING_MODEL_VERSION=2026-09-spectral-v1 uvicorn app.main:app --reload
 ISFAM_PRELOAD_MODELS=true uvicorn app.main:app --reload
 ISFAM_PRELOAD_SPEAKER_MODEL=false uvicorn app.main:app --reload
 ISFAM_DEVICE=cpu uvicorn app.main:app --reload
@@ -525,6 +529,9 @@ ISFAM_DEVICE=cpu uvicorn app.main:app --reload
 ISFAM_SPEAKER_THRESHOLD
 가족 voiceprint 유사도 기준
 
+ISFAM_ANTI_SPOOFING_BACKEND
+기본 spectral, 기존 Hugging Face 모델 fallback은 transformers
+
 ISFAM_ANTI_SPOOFING_THRESHOLD
 AI 합성 음성 탐지 기준
 
@@ -532,7 +539,7 @@ ISFAM_VOICE_SESSION_STRONG_SPOOF_SCORE
 즉시 위험으로 볼 강한 spoof 기준
 
 ISFAM_ANTI_SPOOFING_BATCH_SIZE
-딥보이스 음성 구간을 한 번에 처리할 배치 크기, 기본값 4
+Transformers fallback에서 음성 구간을 한 번에 처리할 배치 크기, 기본값 4
 
 ISFAM_ANTI_SPOOFING_MAX_CONCURRENCY
 한 프로세스에서 동시에 실행할 딥보이스 추론 수, 기본값 2
@@ -625,13 +632,13 @@ reports/family_voiceprint_sample_quality.csv
 
 ## 현재 한계와 개선 계획
 
-현재 버전은 오픈소스 사전학습 모델을 기반으로 하며, 별도 모델 학습은 수행하지 않습니다. 따라서 특정 한국어 통화 환경, 낮은 품질의 녹음, 최신 딥보이스 생성 모델에는 성능 편차가 생길 수 있습니다.
+현재 anti-spoofing 모델은 공개 DFADD 일부로 학습한 소형 모델입니다. 고정 벤치마크에서는 큰 개선을 확인했지만 화자 2명과 생성기 5종에 한정되므로 특정 한국어 통화 환경, 낮은 품질의 녹음, 재생 공격, 학습에 없던 생성 모델에서는 성능 편차가 생길 수 있습니다.
 
 개선 계획:
 
 ```text
-평가 데이터셋 구축
-threshold 자동 튜닝 스크립트 추가
+한국어·전화망·잡음·재생 공격 공개 평가셋 확장
+미지 생성기 hold-out 평가
 한국어 통화 데이터 기반 모델 비교
 등록 문장 기반 active challenge 추가
 위험도 점수 리포트 자동 생성

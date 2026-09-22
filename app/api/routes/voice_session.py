@@ -2,6 +2,7 @@ import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from starlette.concurrency import run_in_threadpool
 
 from app.core.config import Settings, get_settings
 from app.repositories.family_repository import FamilyRepository
@@ -284,14 +285,16 @@ async def analyze_voice_session_chunk(
         )
         temp_paths.append(original_file)
 
-        wav_file = convert_audio_to_standard_wav(
+        wav_file = await run_in_threadpool(
+            convert_audio_to_standard_wav,
             input_path=original_file,
             target_sample_rate=settings.target_sample_rate,
             min_audio_seconds=settings.min_audio_seconds,
         )
         temp_paths.append(wav_file)
 
-        audio_quality = analyze_standard_wav_quality(
+        audio_quality = await run_in_threadpool(
+            analyze_standard_wav_quality,
             wav_path=wav_file,
             target_sample_rate=settings.target_sample_rate,
             min_analyzable_seconds=settings.voice_session_min_analyzable_seconds,
@@ -309,14 +312,19 @@ async def analyze_voice_session_chunk(
             voice_session_repository=voice_session_repository,
             family_repository=family_repository,
             speaker_threshold=settings.speaker_threshold,
-            anti_spoofing_threshold=settings.anti_spoofing_threshold,
+            anti_spoofing_threshold=(
+                anti_spoofing_service.threshold
+                if anti_spoofing_service is not None
+                else settings.anti_spoofing_threshold
+            ),
             repeated_spoof_chunks=settings.voice_session_repeated_spoof_chunks,
             strong_spoof_score=settings.voice_session_strong_spoof_score,
             family_confirm_chunks=settings.voice_session_family_confirm_chunks,
             speaker_service=speaker_service,
             anti_spoofing_service=anti_spoofing_service,
         )
-        result = service.analyze_chunk(
+        result = await run_in_threadpool(
+            service.analyze_chunk,
             session_id=session_id,
             wav_path=wav_file,
             audio_quality=audio_quality,

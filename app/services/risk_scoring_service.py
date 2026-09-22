@@ -114,6 +114,14 @@ class RiskScoringService:
         if family_result.is_registered_family and anti_spoofing_result.is_spoofed:
             risk_score = max(risk_score, 0.55)
 
+        if (
+            family_result.is_registered_family
+            and anti_spoofing_result.spoof_score >= anti_spoofing_result.threshold * 0.7
+        ):
+            # The user-facing policy favors another confirmation over silently
+            # trusting a family-like voice when the spoof score is borderline.
+            risk_score = max(risk_score, 0.35)
+
         if anti_spoofing_result.spoof_score >= self.strong_spoof_score:
             risk_score = max(risk_score, 0.85)
 

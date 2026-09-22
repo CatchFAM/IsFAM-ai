@@ -10,9 +10,9 @@ Android
   - uploads only the call-audio segment needed for deepvoice detection
 
 FastAPI
-  - deepvoice detection (implemented)
+  - 196-feature spectral MLP deepvoice detection (implemented)
   - audio normalization and quality measurement (implemented)
-  - batched model inference and startup warm-up (implemented)
+  - CPU inference, startup warm-up, and Transformers fallback (implemented)
 ```
 
 For a deepvoice-only deployment, disable speaker-model preloading so the server does not spend
@@ -39,6 +39,9 @@ GET /api/v1/anti-spoofing/model-info
 Returns readiness, model name/version, device, threshold, window settings, and batch size. The
 deployment version is configured with `ISFAM_ANTI_SPOOFING_MODEL_VERSION`.
 
+The default backend is the packaged `isfam/spectral-mlp-dfadd-v1` model. Set
+`ISFAM_ANTI_SPOOFING_BACKEND=transformers` to use the previous Hugging Face model.
+
 ### Request
 
 ```http
@@ -51,22 +54,23 @@ Content-Type: multipart/form-data
 | `audio_file` | file | yes | `wav`, `mp3`, or `m4a`; maximum 25 MB |
 
 The server converts the upload to mono 16 kHz PCM WAV before inference. A 3–5 second speech
-segment is recommended. Longer files are split into overlapping windows.
+segment is recommended. The spectral backend analyzes at most the center 5 seconds; callers
+should send consecutive call chunks rather than one long recording.
 
 ### Success response (`200`)
 
 ```json
 {
   "analysis_status": "complete",
-  "processing_time_ms": 430.25,
+  "processing_time_ms": 32.85,
   "is_spoofed": false,
   "spoof_score": 0.2817,
-  "threshold": 0.5,
+  "threshold": 0.5107,
   "predicted_label": "real",
   "predicted_score": 0.7183,
   "message": "bonafide",
-  "model_name": "Vansh180/deepfake-audio-wav2vec2",
-  "analyzed_segments": 2,
+  "model_name": "isfam/spectral-mlp-dfadd-v1",
+  "analyzed_segments": 1,
   "max_spoof_segment_index": 0,
   "segment_seconds": 5.0,
   "label_scores": [

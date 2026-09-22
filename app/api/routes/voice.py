@@ -2,6 +2,7 @@ import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from starlette.concurrency import run_in_threadpool
 
 from app.core.config import Settings, get_settings
 from app.repositories.family_repository import FamilyRepository
@@ -233,7 +234,8 @@ async def verify_family_voice(
         )
         temp_paths.append(original_file)
 
-        wav_file = convert_audio_to_standard_wav(
+        wav_file = await run_in_threadpool(
+            convert_audio_to_standard_wav,
             input_path=original_file,
             target_sample_rate=settings.target_sample_rate,
             min_audio_seconds=settings.min_audio_seconds,
@@ -323,21 +325,23 @@ async def verify_voice(
         )
         temp_paths.append(original_file)
 
-        wav_file = convert_audio_to_standard_wav(
+        wav_file = await run_in_threadpool(
+            convert_audio_to_standard_wav,
             input_path=original_file,
             target_sample_rate=settings.target_sample_rate,
             min_audio_seconds=settings.min_audio_seconds,
         )
         temp_paths.append(wav_file)
 
-        audio_quality = analyze_standard_wav_quality(
+        audio_quality = await run_in_threadpool(
+            analyze_standard_wav_quality,
             wav_path=wav_file,
             target_sample_rate=settings.target_sample_rate,
             min_analyzable_seconds=settings.voice_session_min_analyzable_seconds,
             min_rms_energy=settings.voice_session_min_rms_energy,
             min_speech_ratio=settings.voice_session_min_speech_ratio,
         )
-        result = SecureVoiceVerificationService(
+        verification_service = SecureVoiceVerificationService(
             voiceprint_service=VoiceprintService(
                 family_repository=family_repository,
                 speaker_service=get_speaker_service(),
@@ -346,7 +350,12 @@ async def verify_voice(
             risk_scoring_service=RiskScoringService(
                 strong_spoof_score=settings.voice_session_strong_spoof_score,
             ),
-        ).verify(wav_file, audio_quality=audio_quality)
+        )
+        result = await run_in_threadpool(
+            verification_service.verify,
+            wav_file,
+            audio_quality,
+        )
 
         return SecureVoiceVerificationResponse(
             analysis_status=(

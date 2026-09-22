@@ -1,8 +1,10 @@
 import argparse
 import csv
 import json
+from statistics import mean, median
 import sys
 from pathlib import Path
+from time import perf_counter
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -32,9 +34,19 @@ def parse_thresholds(raw_value: str) -> list[float]:
     return thresholds
 
 
-def collect_audio_files(dataset_dir: Path, allowed_extensions: tuple[str, ...]) -> list[tuple[Path, str]]:
+def collect_audio_files(
+    dataset_dir: Path,
+    allowed_extensions: tuple[str, ...],
+    single_label: str | None = None,
+) -> list[tuple[Path, str]]:
     rows: list[tuple[Path, str]] = []
     allowed = {extension.lower().lstrip(".") for extension in allowed_extensions}
+
+    if single_label is not None:
+        for path in sorted(dataset_dir.rglob("*")):
+            if path.is_file() and path.suffix.lower().lstrip(".") in allowed:
+                rows.append((path, single_label))
+        return rows
 
     for label in ("real", "fake"):
         label_dir = dataset_dir / label
@@ -101,6 +113,14 @@ def write_csv(path: Path, rows: list[dict[str, object]], fieldnames: list[str]) 
         writer.writerows(rows)
 
 
+def percentile(values: list[float], fraction: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    index = min(len(ordered) - 1, round((len(ordered) - 1) * fraction))
+    return ordered[index]
+
+
 def evaluate(args: argparse.Namespace) -> None:
     settings = get_settings()
     dataset_dir = args.dataset.resolve()
@@ -108,7 +128,11 @@ def evaluate(args: argparse.Namespace) -> None:
     metrics_output_path = args.metrics_output.resolve()
     thresholds = parse_thresholds(args.thresholds)
 
-    files = collect_audio_files(dataset_dir, settings.allowed_audio_extensions)
+    files = collect_audio_files(
+        dataset_dir,
+        settings.allowed_audio_extensions,
+        single_label=args.single_label,
+    )
     if args.limit is not None:
         files = files[: args.limit]
     if not files:
@@ -117,12 +141,17 @@ def evaluate(args: argparse.Namespace) -> None:
         )
 
     service = get_anti_spoofing_service()
+    if not args.no_warmup:
+        service.warm_up()
     temp_paths: list[Path | None] = []
     result_rows: list[dict[str, object]] = []
+    evaluation_started_at = perf_counter()
 
     try:
         for index, (audio_path, label) in enumerate(files, start=1):
-            print(f"[{index}/{len(files)}] anti-spoofing: {audio_path}")
+            if not args.quiet or index == 1 or index % 25 == 0 or index == len(files):
+                print(f"[{index}/{len(files)}] anti-spoofing: {audio_path}")
+            end_to_end_started_at = perf_counter()
             wav_path = convert_audio_to_standard_wav(
                 input_path=audio_path,
                 target_sample_rate=settings.target_sample_rate,
@@ -130,7 +159,10 @@ def evaluate(args: argparse.Namespace) -> None:
             )
             temp_paths.append(wav_path)
 
+            inference_started_at = perf_counter()
             result = service.detect_file(wav_path)
+            inference_time_ms = (perf_counter() - inference_started_at) * 1000.0
+            end_to_end_time_ms = (perf_counter() - end_to_end_started_at) * 1000.0
             row = {
                 "file": str(audio_path.relative_to(dataset_dir)),
                 "label": label,
@@ -145,6 +177,8 @@ def evaluate(args: argparse.Namespace) -> None:
                 "max_spoof_segment_index": result.max_spoof_segment_index,
                 "segment_seconds": result.segment_seconds,
                 "model_name": result.model_name,
+                "inference_time_ms": round(inference_time_ms, 3),
+                "end_to_end_time_ms": round(end_to_end_time_ms, 3),
                 "label_scores_json": json.dumps(
                     [
                         {"label": label_score.label, "score": label_score.score}
@@ -171,6 +205,8 @@ def evaluate(args: argparse.Namespace) -> None:
         "max_spoof_segment_index",
         "segment_seconds",
         "model_name",
+        "inference_time_ms",
+        "end_to_end_time_ms",
         "label_scores_json",
     ]
     write_csv(output_path, result_rows, result_fields)
@@ -192,9 +228,36 @@ def evaluate(args: argparse.Namespace) -> None:
     ]
     write_csv(metrics_output_path, metric_rows, metric_fields)
 
+    inference_times = [float(row["inference_time_ms"]) for row in result_rows]
+    end_to_end_times = [float(row["end_to_end_time_ms"]) for row in result_rows]
+    wall_seconds = perf_counter() - evaluation_started_at
+    summary = {
+        "dataset": str(dataset_dir),
+        "model_name": service.model_name,
+        "configured_threshold": service.threshold,
+        "samples": len(result_rows),
+        "real_samples": sum(row["label"] == "real" for row in result_rows),
+        "fake_samples": sum(row["label"] == "fake" for row in result_rows),
+        "warmup_enabled": not args.no_warmup,
+        "wall_seconds": round(wall_seconds, 3),
+        "throughput_files_per_second": round(len(result_rows) / wall_seconds, 3),
+        "inference_mean_ms": round(mean(inference_times), 3),
+        "inference_median_ms": round(median(inference_times), 3),
+        "inference_p95_ms": round(percentile(inference_times, 0.95), 3),
+        "end_to_end_mean_ms": round(mean(end_to_end_times), 3),
+        "end_to_end_median_ms": round(median(end_to_end_times), 3),
+        "end_to_end_p95_ms": round(percentile(end_to_end_times, 0.95), 3),
+    }
+    args.summary_output.parent.mkdir(parents=True, exist_ok=True)
+    args.summary_output.write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
     best_metric = max(metric_rows, key=lambda row: (float(row["accuracy"]), float(row["recall"])))
     print(f"Saved per-file results: {output_path}")
     print(f"Saved threshold metrics: {metrics_output_path}")
+    print(f"Saved runtime summary: {args.summary_output.resolve()}")
     print(
         "Best threshold by accuracy: "
         f"{best_metric['threshold']} "
@@ -220,6 +283,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Per-file output CSV path.",
     )
     parser.add_argument(
+        "--summary-output",
+        type=Path,
+        default=Path("reports/anti_spoofing_runtime.json"),
+        help="Runtime summary JSON path.",
+    )
+    parser.add_argument(
         "--metrics-output",
         type=Path,
         default=Path("reports/anti_spoofing_threshold_metrics.csv"),
@@ -235,6 +304,18 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help="Optional maximum number of files to evaluate for quick smoke tests.",
+    )
+    parser.add_argument(
+        "--single-label",
+        choices=("real", "fake"),
+        default=None,
+        help="Assign one label to every audio file directly under --dataset.",
+    )
+    parser.add_argument("--quiet", action="store_true", help="Print progress every 25 files.")
+    parser.add_argument(
+        "--no-warmup",
+        action="store_true",
+        help="Include first-use kernel initialization instead of warming up before measurement.",
     )
     return parser
 

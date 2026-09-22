@@ -51,8 +51,8 @@ def _family_result(
     )
 
 
-def _spoof_result(is_spoofed: bool) -> AntiSpoofingResult:
-    score = 0.90 if is_spoofed else 0.10
+def _spoof_result(is_spoofed: bool, score: float | None = None) -> AntiSpoofingResult:
+    score = score if score is not None else (0.90 if is_spoofed else 0.10)
     return AntiSpoofingResult(
         is_spoofed=is_spoofed,
         spoof_score=score,
@@ -111,6 +111,19 @@ class SecureVoiceVerificationServiceTest(TestCase):
             anti_spoofing_service=spoof_stub,  # type: ignore[arg-type]
             risk_scoring_service=RiskScoringService(strong_spoof_score=0.8),
         ).verify(Path("unused.wav"))
+        self.assertFalse(result.risk.is_trusted)
+        self.assertEqual(result.risk.risk_level, "caution")
+        self.assertEqual(result.risk.final_decision, "family_voice_needs_confirmation")
+
+    def test_borderline_spoof_score_requires_confirmation(self):
+        family_stub = _VoiceprintStub(_family_result(True))
+        spoof_stub = _AntiSpoofingStub(_spoof_result(False, score=0.36))
+        result = SecureVoiceVerificationService(
+            voiceprint_service=family_stub,  # type: ignore[arg-type]
+            anti_spoofing_service=spoof_stub,  # type: ignore[arg-type]
+            risk_scoring_service=RiskScoringService(strong_spoof_score=0.8),
+        ).verify(Path("unused.wav"))
+
         self.assertFalse(result.risk.is_trusted)
         self.assertEqual(result.risk.risk_level, "caution")
         self.assertEqual(result.risk.final_decision, "family_voice_needs_confirmation")

@@ -51,6 +51,7 @@ htmlcov/
 uploads/
 data/
 audio_samples/
+datasets/public/
 *.wav
 *.mp3
 *.m4a

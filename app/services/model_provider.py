@@ -3,6 +3,7 @@ from functools import lru_cache
 from app.core.config import get_settings
 from app.services.anti_spoofing_service import AntiSpoofingService
 from app.services.speaker_service import SpeakerVerificationService
+from app.services.spectral_anti_spoofing_service import SpectralAntiSpoofingService
 
 
 @lru_cache(maxsize=1)
@@ -13,10 +14,13 @@ def get_speaker_service() -> SpeakerVerificationService:
 
 
 @lru_cache(maxsize=1)
-def get_anti_spoofing_service() -> AntiSpoofingService:
+def get_anti_spoofing_service() -> AntiSpoofingService | SpectralAntiSpoofingService:
     """Create one anti-spoofing model instance and reuse it across API routes."""
 
-    return AntiSpoofingService(get_settings())
+    settings = get_settings()
+    if settings.anti_spoofing_backend == "spectral":
+        return SpectralAntiSpoofingService(settings)
+    return AntiSpoofingService(settings)
 
 
 def preload_models(*, include_speaker: bool = True) -> None:

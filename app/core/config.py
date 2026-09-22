@@ -53,11 +53,16 @@ class Settings:
     # Demo policy: verification_code is fixed instead of sending a real SMS OTP.
     auth_fixed_verification_code: str = "123456"
 
-    # Hugging Face audio classification model for real/spoof voice detection.
+    # Select the fast local spectral model by default; keep Transformers as fallback.
+    anti_spoofing_backend: str = "spectral"
     anti_spoofing_model_name: str = "Vansh180/deepfake-audio-wav2vec2"
-    anti_spoofing_model_version: str = "2026-08-v1"
+    anti_spoofing_model_version: str = "2026-09-spectral-v1"
     anti_spoofing_model_dir: Path = Path("pretrained_models/deepfake-audio-wav2vec2")
-    anti_spoofing_threshold: float = 0.50
+    spectral_anti_spoofing_model_name: str = "isfam/spectral-mlp-dfadd-v1"
+    spectral_anti_spoofing_model_path: Path = Path(
+        "app/assets/spectral_anti_spoof_v1.npz"
+    )
+    anti_spoofing_threshold: float = 0.5107068233191967
     anti_spoofing_spoof_labels: Tuple[str, ...] = (
         "spoof",
         "fake",
@@ -94,6 +99,10 @@ class Settings:
     target_sample_rate: int = 16000
 
     def __post_init__(self) -> None:
+        if self.anti_spoofing_backend not in {"spectral", "transformers"}:
+            raise ValueError(
+                "ISFAM_ANTI_SPOOFING_BACKEND must be spectral or transformers"
+            )
         if not -1.0 <= self.speaker_threshold <= 1.0:
             raise ValueError("ISFAM_SPEAKER_THRESHOLD must be between -1.0 and 1.0")
         if not 0.0 <= self.anti_spoofing_threshold <= 1.0:
@@ -277,13 +286,18 @@ def get_settings() -> Settings:
                 dotenv_values,
             )
         ),
+        anti_spoofing_backend=_get_env(
+            "ISFAM_ANTI_SPOOFING_BACKEND", "spectral", dotenv_values
+        ).strip().lower(),
         anti_spoofing_model_name=_get_env(
             "ISFAM_ANTI_SPOOFING_MODEL_NAME",
             "Vansh180/deepfake-audio-wav2vec2",
             dotenv_values,
         ),
         anti_spoofing_model_version=_get_env(
-            "ISFAM_ANTI_SPOOFING_MODEL_VERSION", "2026-08-v1", dotenv_values
+            "ISFAM_ANTI_SPOOFING_MODEL_VERSION",
+            "2026-09-spectral-v1",
+            dotenv_values,
         ),
         anti_spoofing_model_dir=Path(
             _get_env(
@@ -292,9 +306,21 @@ def get_settings() -> Settings:
                 dotenv_values,
             )
         ),
+        spectral_anti_spoofing_model_name=_get_env(
+            "ISFAM_SPECTRAL_ANTI_SPOOFING_MODEL_NAME",
+            "isfam/spectral-mlp-dfadd-v1",
+            dotenv_values,
+        ),
+        spectral_anti_spoofing_model_path=Path(
+            _get_env(
+                "ISFAM_SPECTRAL_ANTI_SPOOFING_MODEL_PATH",
+                "app/assets/spectral_anti_spoof_v1.npz",
+                dotenv_values,
+            )
+        ),
         anti_spoofing_threshold=_get_float_env(
             "ISFAM_ANTI_SPOOFING_THRESHOLD",
-            0.50,
+            0.5107068233191967,
             dotenv_values,
         ),
         anti_spoofing_spoof_labels=_get_tuple_env(
