@@ -186,6 +186,10 @@ class VoiceSessionService:
         is_trusted_chunk, final_decision = self._make_secure_decision(
             is_registered_family=family_result.is_registered_family,
             is_spoofed=anti_spoofing_result.is_spoofed,
+            has_spoof_warning=(
+                anti_spoofing_result.spoof_score
+                >= anti_spoofing_result.threshold * 0.7
+            ),
         )
         best_match = family_result.best_match
 
@@ -269,6 +273,10 @@ class VoiceSessionService:
             if chunk.spoof_score >= self.anti_spoofing_threshold
         ]
         suspicious_chunk_count = len(suspicious_chunks)
+        has_spoof_warning = any(
+            chunk.spoof_score >= self.anti_spoofing_threshold * 0.7
+            for chunk in analyzable_chunks
+        )
 
         best_family_match = self._find_best_family_match(analyzable_chunks)
         family_match_chunks = self._count_best_family_matches(
@@ -290,7 +298,7 @@ class VoiceSessionService:
         risk_level, message = self._make_rolling_decision(
             is_registered_family=is_registered_family,
             is_spoofed=is_spoofed,
-            has_spoof_warning=suspicious_chunk_count > 0,
+            has_spoof_warning=has_spoof_warning,
             has_family_warning=(
                 best_family_match is not None
                 and best_family_match.similarity >= self.speaker_threshold
@@ -352,7 +360,7 @@ class VoiceSessionService:
             weighted_mismatch_total += mismatch_confidence * weight
             total_weight += weight
 
-            if family_confidence >= 0.65 and spoof_confidence < 0.50:
+            if family_confidence >= 0.65 and spoof_confidence < 0.35:
                 trusted_chunks += 1
             if mismatch_confidence >= 0.65:
                 mismatch_chunks += 1
@@ -445,7 +453,10 @@ class VoiceSessionService:
     def _make_secure_decision(
         is_registered_family: bool,
         is_spoofed: bool,
+        has_spoof_warning: bool = False,
     ) -> tuple[bool, str]:
+        if is_registered_family and not is_spoofed and has_spoof_warning:
+            return False, "family_voice_needs_confirmation"
         if is_registered_family and not is_spoofed:
             return True, "trusted_family_voice"
         if is_registered_family and is_spoofed:
@@ -466,14 +477,14 @@ class VoiceSessionService:
     ) -> tuple[str, str]:
         if rolling_mismatch_confidence >= 0.70 or mismatch_chunks >= 2:
             return "high", "family_mismatch_accumulated"
-        if is_registered_family and not is_spoofed:
-            return "low", "registered_family_likely"
         if is_registered_family and is_spoofed:
             return "high", "spoofed_family_like_voice"
         if is_spoofed:
             return "high", "spoofed_unknown_voice"
         if has_spoof_warning:
             return "medium", "spoof_warning_needs_more_chunks"
+        if is_registered_family:
+            return "low", "registered_family_likely"
         if trusted_chunks > 0 and not is_registered_family:
             return "medium", "family_confidence_needs_more_chunks"
         if has_family_warning:

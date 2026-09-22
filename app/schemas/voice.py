@@ -101,6 +101,7 @@ class VoiceAudioQualityResponse(BaseModel):
     rms_energy: float
     peak_amplitude: float
     speech_ratio: float
+    estimated_snr_db: float
 
 
 class SecureVoiceVerificationResponse(BaseModel):
@@ -108,7 +109,10 @@ class SecureVoiceVerificationResponse(BaseModel):
 
     analysis_status: str = Field(
         ...,
-        description="complete or more_voice_required when call audio quality is weak.",
+        description=(
+            "complete, additional_confirmation for caution results, or "
+            "more_voice_required when call audio quality is weak."
+        ),
         examples=["complete"],
     )
     is_trusted: bool = Field(

@@ -56,13 +56,13 @@ class Settings:
     # Select the fast local spectral model by default; keep Transformers as fallback.
     anti_spoofing_backend: str = "spectral"
     anti_spoofing_model_name: str = "Vansh180/deepfake-audio-wav2vec2"
-    anti_spoofing_model_version: str = "2026-09-spectral-v1"
+    anti_spoofing_model_version: str = "2026-09-spectral-ensemble-v2"
     anti_spoofing_model_dir: Path = Path("pretrained_models/deepfake-audio-wav2vec2")
-    spectral_anti_spoofing_model_name: str = "isfam/spectral-mlp-dfadd-v1"
+    spectral_anti_spoofing_model_name: str = "isfam/spectral-ensemble-telephone-v2"
     spectral_anti_spoofing_model_path: Path = Path(
-        "app/assets/spectral_anti_spoof_v1.npz"
+        "app/assets/spectral_anti_spoof_ensemble_v2.npz"
     )
-    anti_spoofing_threshold: float = 0.5107068233191967
+    anti_spoofing_threshold: float = 0.5
     anti_spoofing_spoof_labels: Tuple[str, ...] = (
         "spoof",
         "fake",
@@ -83,6 +83,7 @@ class Settings:
     voice_session_min_analyzable_seconds: float = 2.0
     voice_session_min_rms_energy: float = 0.005
     voice_session_min_speech_ratio: float = 0.25
+    voice_session_min_estimated_snr_db: float = 25.0
     voice_session_repeated_spoof_chunks: int = 2
     voice_session_strong_spoof_score: float = 0.80
     voice_session_family_confirm_chunks: int = 2
@@ -133,6 +134,10 @@ class Settings:
         if not 0.0 <= self.voice_session_min_speech_ratio <= 1.0:
             raise ValueError(
                 "ISFAM_VOICE_SESSION_MIN_SPEECH_RATIO must be between 0.0 and 1.0"
+            )
+        if self.voice_session_min_estimated_snr_db < 0.0:
+            raise ValueError(
+                "ISFAM_VOICE_SESSION_MIN_ESTIMATED_SNR_DB must be greater than or equal to 0"
             )
         if self.voice_session_repeated_spoof_chunks < 1:
             raise ValueError(
@@ -296,7 +301,7 @@ def get_settings() -> Settings:
         ),
         anti_spoofing_model_version=_get_env(
             "ISFAM_ANTI_SPOOFING_MODEL_VERSION",
-            "2026-09-spectral-v1",
+            "2026-09-spectral-ensemble-v2",
             dotenv_values,
         ),
         anti_spoofing_model_dir=Path(
@@ -308,19 +313,19 @@ def get_settings() -> Settings:
         ),
         spectral_anti_spoofing_model_name=_get_env(
             "ISFAM_SPECTRAL_ANTI_SPOOFING_MODEL_NAME",
-            "isfam/spectral-mlp-dfadd-v1",
+            "isfam/spectral-ensemble-telephone-v2",
             dotenv_values,
         ),
         spectral_anti_spoofing_model_path=Path(
             _get_env(
                 "ISFAM_SPECTRAL_ANTI_SPOOFING_MODEL_PATH",
-                "app/assets/spectral_anti_spoof_v1.npz",
+                "app/assets/spectral_anti_spoof_ensemble_v2.npz",
                 dotenv_values,
             )
         ),
         anti_spoofing_threshold=_get_float_env(
             "ISFAM_ANTI_SPOOFING_THRESHOLD",
-            0.5107068233191967,
+            0.5,
             dotenv_values,
         ),
         anti_spoofing_spoof_labels=_get_tuple_env(
@@ -366,6 +371,11 @@ def get_settings() -> Settings:
         voice_session_min_speech_ratio=_get_float_env(
             "ISFAM_VOICE_SESSION_MIN_SPEECH_RATIO",
             0.25,
+            dotenv_values,
+        ),
+        voice_session_min_estimated_snr_db=_get_float_env(
+            "ISFAM_VOICE_SESSION_MIN_ESTIMATED_SNR_DB",
+            25.0,
             dotenv_values,
         ),
         voice_session_repeated_spoof_chunks=_get_int_env(

@@ -105,6 +105,7 @@ class AudioQualityResponse(BaseModel):
     rms_energy: float = Field(..., examples=[0.0321])
     peak_amplitude: float = Field(..., examples=[0.41])
     speech_ratio: float = Field(..., examples=[0.76])
+    estimated_snr_db: float = Field(..., examples=[28.4])
 
 
 class VoiceSessionChunkResponse(BaseModel):

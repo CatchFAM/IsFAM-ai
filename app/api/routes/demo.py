@@ -46,6 +46,11 @@ def get_demo_service(
 
 def _anti_spoofing_result_to_response(result: AntiSpoofingResult) -> AntiSpoofingResponse:
     return AntiSpoofingResponse(
+        analysis_status=(
+            "additional_confirmation"
+            if result.message == "additional_confirmation"
+            else "complete"
+        ),
         is_spoofed=result.is_spoofed,
         spoof_score=result.spoof_score,
         threshold=result.threshold,
@@ -162,7 +167,7 @@ async def answer_demo_session(
         temp_paths.append(wav_file)
 
         anti_spoofing_result = get_anti_spoofing_service().detect_file(wav_file)
-        ai_guess = "fake" if anti_spoofing_result.is_spoofed else "real"
+        ai_guess = anti_spoofing_result.predicted_label
 
         return DemoAnswerResponse(
             session_id=record.id,
@@ -425,7 +430,9 @@ DEMO_HTML = """
     const resultEl = document.getElementById("result");
 
     function labelText(value) {
-      return value === "fake" ? "AI 음성" : "실제 음성";
+      if (value === "fake") return "AI 음성";
+      if (value === "uncertain") return "추가 확인 필요";
+      return "실제 음성";
     }
 
     function setStatus(message) {

@@ -68,8 +68,14 @@ def anti_spoofing_result_to_response(
     processing_time_ms: float,
     audio_quality: AntiSpoofingAudioQuality,
 ) -> AntiSpoofingResponse:
+    if not audio_quality.is_analyzable:
+        analysis_status = "more_voice_required"
+    elif result.message == "additional_confirmation":
+        analysis_status = "additional_confirmation"
+    else:
+        analysis_status = "complete"
     return AntiSpoofingResponse(
-        analysis_status=("complete" if audio_quality.is_analyzable else "more_voice_required"),
+        analysis_status=analysis_status,
         processing_time_ms=processing_time_ms,
         is_spoofed=result.is_spoofed,
         spoof_score=result.spoof_score,
@@ -127,6 +133,7 @@ async def detect_spoofed_voice(
             min_analyzable_seconds=settings.voice_session_min_analyzable_seconds,
             min_rms_energy=settings.voice_session_min_rms_energy,
             min_speech_ratio=settings.voice_session_min_speech_ratio,
+            min_estimated_snr_db=settings.voice_session_min_estimated_snr_db,
         )
 
         # Load the model only after the upload is valid and converted.
@@ -147,6 +154,7 @@ async def detect_spoofed_voice(
                 rms_energy=quality.rms_energy,
                 peak_amplitude=quality.peak_amplitude,
                 speech_ratio=quality.speech_ratio,
+                estimated_snr_db=quality.estimated_snr_db,
             ),
         )
 

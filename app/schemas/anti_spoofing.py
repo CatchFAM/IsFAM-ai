@@ -15,6 +15,7 @@ class AntiSpoofingAudioQuality(BaseModel):
     rms_energy: float
     peak_amplitude: float
     speech_ratio: float
+    estimated_snr_db: float
 
 
 class AntiSpoofingModelInfoResponse(BaseModel):
@@ -43,7 +44,10 @@ class AntiSpoofingResponse(BaseModel):
 
     analysis_status: str = Field(
         default="complete",
-        description="complete or more_voice_required when call audio is unreliable.",
+        description=(
+            "complete, additional_confirmation for a borderline model result, or "
+            "more_voice_required when call audio is unreliable."
+        ),
         examples=["complete"],
     )
     processing_time_ms: float = Field(

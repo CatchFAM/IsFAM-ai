@@ -98,15 +98,17 @@ speechbrain/spkrec-ecapa-voxceleb
 
 ### 2. 딥보이스 탐지
 
-3~5초 전화 음성에서 log-spectrum 통계 특징 196개를 추출하고, 작은 MLP로 real/spoof 점수를 계산합니다. 공개 DFADD calibration 세트로 학습·보정했으며 기존 Transformers 모델은 선택 가능한 fallback으로 남겨 두었습니다.
+3~5초 전화 음성에서 log-spectrum 통계 특징 196개를 추출하고, 두 개의 작은 MLP로 real/spoof 점수를 계산합니다. 전화 대역·잡음·음량·clipping·frame 손실·잔향·재생 모사를 증강 학습했으며 기존 Transformers 모델은 선택 가능한 fallback으로 남겨 두었습니다.
 
 기본 모델:
 
 ```text
-isfam/spectral-mlp-dfadd-v1
+isfam/spectral-ensemble-telephone-v2
 ```
 
-고정 DFADD 테스트 800개에서 기존 기본 모델 대비 정확도는 `50.88% → 98.88%`, fake recall은 `1.75% → 99.50%`, 평균 순수 추론은 `117.18 ms → 2.08 ms`로 개선됐습니다. 모델 구성, 개선 이유, 전화환경 제한과 상세 수치는 [AI 최종 정리](reports/ai_upgrade_results.md)를 참고합니다.
+고정 DFADD 테스트 800개에서 기존 기본 모델 대비 정확도는 `50.88% → 99.38%`, fake 자동 탐지는 `1.75% → 99.25%`, 평균 순수 추론은 `117.18 ms → 3.17 ms`로 개선됐습니다. 모델 구성, 개선 이유, 전화환경 제한과 상세 수치는 [AI 최종 정리](reports/ai_upgrade_results.md)를 참고합니다.
+
+전화 강건 v2가 자동 차단을 담당하고, clean v1만 경고한 음성은 추가 확인으로 보냅니다. 미지 생성기 차단 또는 확인 평균은 `98.25%`, 최저 `95.00%`, 합성 8 kHz 전화 대역 fake 자동 탐지는 `98.75%`였습니다. 단, 실제 전화 녹음이 아닌 합성 스트레스 시험이므로 실기기 검증 전 운영 성능을 보장하지 않습니다.
 
 ### 3. IsFAM Risk Scoring
 
@@ -513,11 +515,12 @@ fallback을 선택한 첫 실행에서만 Hugging Face 모델을 내려받습니
 ```bash
 ISFAM_SPEAKER_THRESHOLD=0.65 uvicorn app.main:app --reload
 ISFAM_ANTI_SPOOFING_BACKEND=spectral uvicorn app.main:app --reload
-ISFAM_ANTI_SPOOFING_THRESHOLD=0.5107068233191967 uvicorn app.main:app --reload
+ISFAM_ANTI_SPOOFING_THRESHOLD=0.5 uvicorn app.main:app --reload
+ISFAM_VOICE_SESSION_MIN_ESTIMATED_SNR_DB=25.0 uvicorn app.main:app --reload
 ISFAM_VOICE_SESSION_STRONG_SPOOF_SCORE=0.80 uvicorn app.main:app --reload
 ISFAM_ANTI_SPOOFING_BATCH_SIZE=4 uvicorn app.main:app --reload
 ISFAM_ANTI_SPOOFING_MAX_CONCURRENCY=2 uvicorn app.main:app --reload
-ISFAM_ANTI_SPOOFING_MODEL_VERSION=2026-09-spectral-v1 uvicorn app.main:app --reload
+ISFAM_ANTI_SPOOFING_MODEL_VERSION=2026-09-spectral-ensemble-v2 uvicorn app.main:app --reload
 ISFAM_PRELOAD_MODELS=true uvicorn app.main:app --reload
 ISFAM_PRELOAD_SPEAKER_MODEL=false uvicorn app.main:app --reload
 ISFAM_DEVICE=cpu uvicorn app.main:app --reload
@@ -537,6 +540,9 @@ AI 합성 음성 탐지 기준
 
 ISFAM_VOICE_SESSION_STRONG_SPOOF_SCORE
 즉시 위험으로 볼 강한 spoof 기준
+
+ISFAM_VOICE_SESSION_MIN_ESTIMATED_SNR_DB
+자동 판정에 필요한 최소 추정 SNR, 미달하면 추가 음성 요청
 
 ISFAM_ANTI_SPOOFING_BATCH_SIZE
 Transformers fallback에서 음성 구간을 한 번에 처리할 배치 크기, 기본값 4
@@ -632,14 +638,14 @@ reports/family_voiceprint_sample_quality.csv
 
 ## 현재 한계와 개선 계획
 
-현재 anti-spoofing 모델은 공개 DFADD 일부로 학습한 소형 모델입니다. 고정 벤치마크에서는 큰 개선을 확인했지만 화자 2명과 생성기 5종에 한정되므로 특정 한국어 통화 환경, 낮은 품질의 녹음, 재생 공격, 학습에 없던 생성 모델에서는 성능 편차가 생길 수 있습니다.
+현재 anti-spoofing 모델은 공개 DFADD 일부와 합성 전화 변형으로 학습한 소형 앙상블입니다. 고정 벤치마크와 합성 스트레스 시험에서는 큰 개선을 확인했지만 화자 2명과 생성기 5종에 한정되므로 실제 한국어 전화망, 기기별 마이크, codec, 재생·재녹음에서는 성능 편차가 생길 수 있습니다. 저품질·애매 구간은 자동 확정 대신 추가 확인으로 보냅니다.
 
 개선 계획:
 
 ```text
 한국어·전화망·잡음·재생 공격 공개 평가셋 확장
-미지 생성기 hold-out 평가
-한국어 통화 데이터 기반 모델 비교
+실제 Android 한국어 통화 A/B 평가
+한국어 통화 데이터 기반 threshold 재보정
 등록 문장 기반 active challenge 추가
 위험도 점수 리포트 자동 생성
 ```

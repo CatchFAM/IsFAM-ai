@@ -87,6 +87,11 @@ def _family_result_to_response(result: FamilyVerificationResult) -> VerifyFamily
 
 def _anti_spoofing_result_to_response(result: AntiSpoofingResult) -> AntiSpoofingResponse:
     return AntiSpoofingResponse(
+        analysis_status=(
+            "additional_confirmation"
+            if result.message == "additional_confirmation"
+            else "complete"
+        ),
         is_spoofed=result.is_spoofed,
         spoof_score=result.spoof_score,
         threshold=result.threshold,
@@ -340,6 +345,7 @@ async def verify_voice(
             min_analyzable_seconds=settings.voice_session_min_analyzable_seconds,
             min_rms_energy=settings.voice_session_min_rms_energy,
             min_speech_ratio=settings.voice_session_min_speech_ratio,
+            min_estimated_snr_db=settings.voice_session_min_estimated_snr_db,
         )
         verification_service = SecureVoiceVerificationService(
             voiceprint_service=VoiceprintService(
@@ -359,7 +365,13 @@ async def verify_voice(
 
         return SecureVoiceVerificationResponse(
             analysis_status=(
-                "complete" if audio_quality.is_analyzable else "more_voice_required"
+                "more_voice_required"
+                if not audio_quality.is_analyzable
+                else (
+                    "additional_confirmation"
+                    if result.risk.risk_level == "caution"
+                    else "complete"
+                )
             ),
             is_trusted=result.risk.is_trusted,
             risk_level=result.risk.risk_level,
@@ -378,6 +390,7 @@ async def verify_voice(
                 rms_energy=audio_quality.rms_energy,
                 peak_amplitude=audio_quality.peak_amplitude,
                 speech_ratio=audio_quality.speech_ratio,
+                estimated_snr_db=audio_quality.estimated_snr_db,
             ),
             family_verification=_family_result_to_response(result.family_verification),
             anti_spoofing=_anti_spoofing_result_to_response(result.anti_spoofing),

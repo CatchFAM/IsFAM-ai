@@ -18,6 +18,7 @@ class AudioQualityResult:
     rms_energy: float
     peak_amplitude: float
     speech_ratio: float
+    estimated_snr_db: float = 0.0
 
 
 def analyze_standard_wav_quality(
@@ -26,6 +27,7 @@ def analyze_standard_wav_quality(
     min_analyzable_seconds: float,
     min_rms_energy: float,
     min_speech_ratio: float,
+    min_estimated_snr_db: float = 25.0,
 ) -> AudioQualityResult:
     """Estimate whether a 16kHz mono PCM wav has enough speech-like signal."""
 
@@ -33,7 +35,7 @@ def analyze_standard_wav_quality(
     duration_seconds = len(samples) / float(target_sample_rate)
 
     if not samples:
-        return _result(False, "empty_audio", duration_seconds, 0.0, 0.0, 0.0)
+        return _result(False, "empty_audio", duration_seconds, 0.0, 0.0, 0.0, 0.0)
 
     rms_energy = math.sqrt(sum(sample * sample for sample in samples) / len(samples))
     peak_amplitude = max(abs(sample) for sample in samples)
@@ -42,6 +44,7 @@ def analyze_standard_wav_quality(
         sample_rate=target_sample_rate,
         min_rms_energy=min_rms_energy,
     )
+    estimated_snr_db = _compute_estimated_snr_db(samples, target_sample_rate)
 
     if duration_seconds < min_analyzable_seconds:
         return _result(
@@ -51,6 +54,7 @@ def analyze_standard_wav_quality(
             rms_energy,
             peak_amplitude,
             speech_ratio,
+            estimated_snr_db,
         )
     if rms_energy < min_rms_energy:
         return _result(
@@ -60,6 +64,7 @@ def analyze_standard_wav_quality(
             rms_energy,
             peak_amplitude,
             speech_ratio,
+            estimated_snr_db,
         )
     if speech_ratio < min_speech_ratio:
         return _result(
@@ -69,6 +74,17 @@ def analyze_standard_wav_quality(
             rms_energy,
             peak_amplitude,
             speech_ratio,
+            estimated_snr_db,
+        )
+    if estimated_snr_db < min_estimated_snr_db:
+        return _result(
+            False,
+            "low_signal_to_noise",
+            duration_seconds,
+            rms_energy,
+            peak_amplitude,
+            speech_ratio,
+            estimated_snr_db,
         )
 
     return _result(
@@ -78,6 +94,7 @@ def analyze_standard_wav_quality(
         rms_energy,
         peak_amplitude,
         speech_ratio,
+        estimated_snr_db,
     )
 
 
@@ -104,6 +121,34 @@ def _compute_speech_ratio(
     if frame_count == 0:
         return 0.0
     return speech_like_frames / frame_count
+
+
+def _compute_estimated_snr_db(samples: list[float], sample_rate: int) -> float:
+    """Estimate dynamic SNR from quiet/loud frame percentiles.
+
+    This is a conservative quality gate, not a calibrated acoustic SNR meter.
+    """
+
+    frame_size = max(1, int(sample_rate * 0.02))
+    frame_rms_values: list[float] = []
+    for start in range(0, len(samples), frame_size):
+        frame = samples[start : start + frame_size]
+        if len(frame) < frame_size:
+            continue
+        frame_rms_values.append(
+            math.sqrt(sum(sample * sample for sample in frame) / len(frame))
+        )
+    if len(frame_rms_values) < 2:
+        return 0.0
+    ordered = sorted(frame_rms_values)
+    noise_index = round((len(ordered) - 1) * 0.10)
+    speech_index = round((len(ordered) - 1) * 0.90)
+    noise_level = ordered[noise_index]
+    speech_level = ordered[speech_index]
+    return max(
+        0.0,
+        min(100.0, 20.0 * math.log10((speech_level + 1e-8) / (noise_level + 1e-8))),
+    )
 
 
 def _read_standard_wav_samples(wav_path: Path, target_sample_rate: int) -> list[float]:
@@ -150,6 +195,7 @@ def _result(
     rms_energy: float,
     peak_amplitude: float,
     speech_ratio: float,
+    estimated_snr_db: float,
 ) -> AudioQualityResult:
     return AudioQualityResult(
         is_analyzable=is_analyzable,
@@ -158,4 +204,5 @@ def _result(
         rms_energy=round(rms_energy, 6),
         peak_amplitude=round(peak_amplitude, 6),
         speech_ratio=round(speech_ratio, 4),
+        estimated_snr_db=round(estimated_snr_db, 3),
     )

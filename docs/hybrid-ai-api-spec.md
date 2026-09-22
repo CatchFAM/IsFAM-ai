@@ -10,7 +10,7 @@ Android
   - uploads only the call-audio segment needed for deepvoice detection
 
 FastAPI
-  - 196-feature spectral MLP deepvoice detection (implemented)
+  - two-component, 196-feature spectral MLP deepvoice detection (implemented)
   - audio normalization and quality measurement (implemented)
   - CPU inference, startup warm-up, and Transformers fallback (implemented)
 ```
@@ -39,7 +39,9 @@ GET /api/v1/anti-spoofing/model-info
 Returns readiness, model name/version, device, threshold, window settings, and batch size. The
 deployment version is configured with `ISFAM_ANTI_SPOOFING_MODEL_VERSION`.
 
-The default backend is the packaged `isfam/spectral-mlp-dfadd-v1` model. Set
+The default backend is the packaged `isfam/spectral-ensemble-telephone-v2` model. Its
+telephone-robust component controls automatic spoof decisions, while a v1-only alert maps to
+the additional-confirmation band. Set
 `ISFAM_ANTI_SPOOFING_BACKEND=transformers` to use the previous Hugging Face model.
 
 ### Request
@@ -65,11 +67,11 @@ should send consecutive call chunks rather than one long recording.
   "processing_time_ms": 32.85,
   "is_spoofed": false,
   "spoof_score": 0.2817,
-  "threshold": 0.5107,
+  "threshold": 0.5,
   "predicted_label": "real",
   "predicted_score": 0.7183,
   "message": "bonafide",
-  "model_name": "isfam/spectral-mlp-dfadd-v1",
+  "model_name": "isfam/spectral-ensemble-telephone-v2",
   "analyzed_segments": 1,
   "max_spoof_segment_index": 0,
   "segment_seconds": 5.0,
@@ -83,14 +85,21 @@ should send consecutive call chunks rather than one long recording.
     "duration_seconds": 5.0,
     "rms_energy": 0.08,
     "peak_amplitude": 0.72,
-    "speech_ratio": 0.84
+    "speech_ratio": 0.84,
+    "estimated_snr_db": 31.2
   }
 }
 ```
 
 `analysis_status=more_voice_required` means the model was run but the audio was too short,
-quiet, or speech-sparse for a reliable final decision. The client should collect another
+quiet, speech-sparse, or below the configured estimated-SNR gate for a reliable final decision.
+The client should collect another
 segment; it must not treat the raw `is_spoofed` value as a confirmed warning in that case.
+
+`predicted_label=uncertain` and `message=additional_confirmation` indicate that the robust
+component passed but the clean-data component raised a warning. The client must ask for an
+additional confirmation instead of showing either a safe or confirmed-danger result. In that
+case `analysis_status` is also `additional_confirmation`.
 
 ### Error responses
 

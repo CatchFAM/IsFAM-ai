@@ -1,0 +1,21 @@
+{
+  "model_name": "isfam/spectral-ensemble-telephone-v2",
+  "feature_version": "spectral_ensemble_v2",
+  "feature_count": 196,
+  "threshold": 0.5,
+  "combination": "telephone-robust v2 controls automatic spoof decisions; v1-only alerts map to the additional-confirmation band",
+  "components": [
+    {
+      "prefix": "v1",
+      "model_name": "isfam/spectral-mlp-dfadd-v1",
+      "feature_version": "spectral_v1",
+      "threshold": 0.5107068233191967
+    },
+    {
+      "prefix": "v2",
+      "model_name": "isfam/spectral-mlp-telephone-robust-v2",
+      "feature_version": "telephone_robust_v2",
+      "threshold": 0.7839074730873108
+    }
+  ]
+}

@@ -2,3 +2,4 @@
 
 # Offline public-benchmark preparation only; not required by the API runtime.
 pyarrow>=25.0.0,<26.0.0
+scipy>=1.10.0

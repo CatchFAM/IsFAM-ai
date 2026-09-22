@@ -118,6 +118,11 @@ def _family_result_to_response(result: FamilyVerificationResult) -> VerifyFamily
 
 def _anti_spoofing_result_to_response(result: AntiSpoofingResult) -> AntiSpoofingResponse:
     return AntiSpoofingResponse(
+        analysis_status=(
+            "additional_confirmation"
+            if result.message == "additional_confirmation"
+            else "complete"
+        ),
         is_spoofed=result.is_spoofed,
         spoof_score=result.spoof_score,
         threshold=result.threshold,
@@ -181,6 +186,7 @@ def _quality_to_response(result: AudioQualityResult) -> AudioQualityResponse:
         rms_energy=result.rms_energy,
         peak_amplitude=result.peak_amplitude,
         speech_ratio=result.speech_ratio,
+        estimated_snr_db=result.estimated_snr_db,
     )
 
 
@@ -300,6 +306,7 @@ async def analyze_voice_session_chunk(
             min_analyzable_seconds=settings.voice_session_min_analyzable_seconds,
             min_rms_energy=settings.voice_session_min_rms_energy,
             min_speech_ratio=settings.voice_session_min_speech_ratio,
+            min_estimated_snr_db=settings.voice_session_min_estimated_snr_db,
         )
 
         speaker_service = get_speaker_service() if audio_quality.is_analyzable else None
