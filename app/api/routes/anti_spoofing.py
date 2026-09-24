@@ -106,6 +106,7 @@ async def detect_spoofed_voice(
     """Detect whether one uploaded voice looks spoofed/deepfake."""
 
     temp_paths: list[Path | None] = []
+    response: AntiSpoofingResponse | None = None
 
     try:
         if audio_file is None:
@@ -144,7 +145,7 @@ async def detect_spoofed_voice(
                 wav_file,
             )
         processing_time_ms = round((perf_counter() - inference_started_at) * 1000.0, 2)
-        return anti_spoofing_result_to_response(
+        response = anti_spoofing_result_to_response(
             result,
             processing_time_ms=processing_time_ms,
             audio_quality=AntiSpoofingAudioQuality(
@@ -157,6 +158,7 @@ async def detect_spoofed_voice(
                 estimated_snr_db=quality.estimated_snr_db,
             ),
         )
+        return response
 
     except MissingAudioFileError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -196,4 +198,7 @@ async def detect_spoofed_voice(
             detail="internal server error during anti-spoofing detection",
         ) from exc
     finally:
-        cleanup_temp_files(temp_paths)
+        purged = cleanup_temp_files(temp_paths)
+        if response is not None:
+            # FastAPI serializes the returned model after this finally block.
+            response.purged = purged

@@ -15,6 +15,7 @@ dist/
 node_modules/
 mobile/node_modules/
 mobile/dist/
+/integrations/
 
 # Environment
 .env

@@ -23,10 +23,10 @@ ISFAM_PRELOAD_MODELS=true
 ISFAM_PRELOAD_SPEAKER_MODEL=false
 ```
 
-The Java product server is outside this repository. At commit `669af54`, it contains the
-`isfam.fastapi.base-url` setting but no controller/client that proxies this request. Until that
-proxy is implemented, an Android client configured with the Java server URL cannot reach the
-deepvoice endpoint. The proxy should preserve the audio field and response body below.
+The Java product server's `dev` branch implements
+`POST /call-events/{callEventId}/spoof-check` and proxies its `audio_file` part to this API.
+It preserves `complete`, `additional_confirmation`, and `more_voice_required` as distinct
+states and records both local and FastAPI temporary-file purge results.
 
 ## Deepvoice detection API
 
@@ -75,6 +75,7 @@ should send consecutive call chunks rather than one long recording.
   "analyzed_segments": 1,
   "max_spoof_segment_index": 0,
   "segment_seconds": 5.0,
+  "purged": true,
   "label_scores": [
     {"label": "real", "score": 0.7183},
     {"label": "fake", "score": 0.2817}
@@ -100,6 +101,10 @@ segment; it must not treat the raw `is_spoofed` value as a confirmed warning in 
 component passed but the clean-data component raised a warning. The client must ask for an
 additional confirmation instead of showing either a safe or confirmed-danger result. In that
 case `analysis_status` is also `additional_confirmation`.
+
+`purged=true` confirms that the FastAPI process deleted all temporary upload and normalized
+audio files before the response was serialized. The app server records this separately from
+its own temporary-file deletion status.
 
 ### Error responses
 
@@ -127,9 +132,11 @@ The on-device family verifier should expose this logical result to the app UI:
 
 The Kotlin implementation now lives in the separate `isfam-app` repository. It includes the
 INT8 ECAPA asset, ONNX Runtime, SpeechBrain-compatible FBank preprocessing, local cosine
-matching, Keystore-backed AES-GCM storage, and a hybrid result combiner. JVM golden tests and
-debug APK packaging pass. Real-device ONNX execution, latency, memory, battery, and threshold
-calibration are still required before release.
+matching, Keystore-backed AES-GCM storage, and a hybrid result combiner. The app uploads only a
+center 5-second 16 kHz mono PCM16 WAV (about 160 KB), trusts the server-provided `is_spoofed`
+decision instead of re-thresholding it locally, and maps `additional_confirmation` to caution.
+JVM tests and debug compilation pass. Real-device end-to-end latency, battery, and threshold
+validation are still required before release.
 
 ## Speaker ONNX proof of concept
 

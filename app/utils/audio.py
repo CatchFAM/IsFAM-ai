@@ -310,13 +310,16 @@ def convert_audio_to_standard_wav(
         raise AudioDecodingError("failed to convert audio to wav") from exc
 
 
-def cleanup_temp_files(paths: Iterable[Path | None]) -> None:
-    """Delete temporary files created during request handling."""
+def cleanup_temp_files(paths: Iterable[Path | None]) -> bool:
+    """Delete temporary files and report whether every deletion succeeded."""
 
+    all_purged = True
     for path in paths:
         if path is None:
             continue
         try:
             path.unlink(missing_ok=True)
         except Exception:
+            all_purged = False
             logger.warning("Failed to delete temporary file: %s", path, exc_info=True)
+    return all_purged

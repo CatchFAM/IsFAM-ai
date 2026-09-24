@@ -91,3 +91,7 @@ class AntiSpoofingResponse(BaseModel):
         description="Label scores from the segment that produced spoof_score.",
     )
     audio_quality: AntiSpoofingAudioQuality | None = None
+    purged: bool = Field(
+        default=False,
+        description="True after every server-side temporary audio file was deleted.",
+    )

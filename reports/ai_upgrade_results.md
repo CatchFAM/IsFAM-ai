@@ -154,6 +154,19 @@ ISFAM_VOICE_SESSION_MIN_ESTIMATED_SNR_DB=25.0
 
 최종 artifact SHA-256: `7ba7c94ce2cb1e57864750447b2e44e976a6b0f309be45b91e5ba8146eab80a4`
 
+## 앱·앱 서버 연동
+
+`IsFAM_BE`의 `dev` 브랜치와 `isfam-app`의 `main` 브랜치를 기준으로 실제 호출 경로까지 연결했다.
+
+- Android 앱은 원본 m4a 전체 대신 전처리된 통화의 중앙 5초를 16 kHz mono PCM16 WAV로 만들어 전송한다. 전송량은 약 160 KB이며 앱 서버의 WAV 형식·1.5 MB 제한과 일치한다.
+- 앱 서버는 `complete`, `additional_confirmation`, `more_voice_required`를 서로 다른 상태로 보존한다.
+- 앱은 모델 점수에 자체 0.8 임계값을 다시 적용하지 않고 FastAPI가 반환한 `is_spoofed`와 `threshold`를 사용한다.
+- `additional_confirmation`은 가족 화자와 일치해도 안전으로 내리지 않고 확인 필요로 표시한다.
+- `more_voice_required`는 낮은 추정 SNR 등 음질 문제로 구분해 더 깨끗한 음성을 요청한다.
+- FastAPI는 응답 직전 임시 업로드와 변환 WAV 삭제 성공 여부를 `purged=true/false`로 반환하고 앱 서버가 파기 기록에 보관한다.
+
+검증은 FastAPI 테스트 22개, Android `testDebugUnitTest`·`assembleDebug`, Spring Boot 전체 테스트를 통과했다. 실제 FastAPI HTTP 호출에서도 `purged=true`, 모델명, 임계값, 추정 SNR 응답을 확인했다.
+
 ## 재현 방법
 
 ```bash
